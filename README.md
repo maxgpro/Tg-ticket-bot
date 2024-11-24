@@ -1,15 +1,15 @@
 # Installation
 `sudo apt update`
 
-`sudo apt install python3`
+`sudo apt install python3` — Install python3
 
-`sudo apt install python3-venv`
+`sudo apt install python3-venv` — Install the virtual environment manager
 
-`python3 -m venv venv`
+`python3 -m venv venv` — Create a virtual environment
 
-`cp tickets.json.dist tickets.json`
+`cp tickets.json.dist tickets.json` — Make Storage
 
-`cp config/config.py.dist config/config.py`
+`cp config/config.py.dist config/config.py` — Make Config
 
 
 # Work
@@ -22,5 +22,5 @@
 # Service Comands
 `pip install --upgrade pip` — Update pip
 
-`pip install aiogram async_scheduler` — Install dependencies
+`pip install aiogram aioschedule` — Install dependencies
 
