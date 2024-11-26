@@ -3,7 +3,7 @@ import json
 import atexit
 import asyncio
 import aioschedule as schedule
-from config.config import TOKEN, REMINDER_INTERVAL
+from config.config import TOKEN, REMINDER_INTERVAL, REMINDER_TOPIC_ID, STATUS_TOPIC_ID
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, Router
 from aiogram.types import Message
@@ -70,21 +70,39 @@ async def send_reminder(ticket_number: str):
         ticket = active_tickets.get(ticket_number)
         if ticket:
             ticket["remind_times"] += 1
-            elapsed_time = timedelta(seconds=ticket["remind_times"] * REMINDER_INTERVAL)
             start_time = datetime.strptime(ticket["start_time"], '%H:%M %d.%m.%Y')
+            elapsed_time = datetime.now() - start_time  # Разница во времени
+            elapsed_minutes = elapsed_time.total_seconds() // 60  # Преобразование в минуты
 
             # Отправляем сообщение как ответ на исходное сообщение
-            await bot.send_message(
-                chat_id=ticket["chat_id"],
-                text=f"Reminder: Ticket {ticket_number} opened {elapsed_time} "
-                     f"({start_time.strftime('%H:%M %d.%m.%Y')})",
-                reply_to_message_id=ticket["message_id"]  # Ответ на сообщение
+            sent_message = await bot.send_message(
+                chat_id = ticket["chat_id"],
+                text = f"{ticket_number} прошло {int(elapsed_minutes)} мин.",
+                message_thread_id = REMINDER_TOPIC_ID
             )
+
+            # Сохраняем message_id отправленного сообщения
+            ticket["notification_messages"].append(sent_message.message_id)
+
+            # Сохраняем обновленную заявку
+            active_tickets[ticket_number] = ticket
+            save_tickets()
+
             logging.info(f"Reminder sent for ticket {ticket_number}")
     except Exception as e:
         logging.error(f"Error in send_reminder for ticket {ticket_number}: {e}")
 
 
+def date_time_formatter(start_time: str) -> str:
+    try:
+        # Преобразование строки в объект datetime
+        start_time_obj = datetime.strptime(start_time, '%H:%M %d.%m.%Y')
+        # Форматирование с разделителем "—"
+        formatted_start_time = start_time_obj.strftime('%H:%M — %d.%m.%Y')
+        return formatted_start_time
+    except Exception as e:
+        logging.error(f"Error in date_time_formater: {e}")
+        return start_time  # Возврат исходной строки, если произошла ошибка
 
 
 # --- Команды бота ---------------------------------------------------------
@@ -97,16 +115,23 @@ async def handle_message(message: Message):
 
         now = datetime.now().strftime('%H:%M %d.%m.%Y')
         chat_id = message.chat.id
-        # Приводим текст к единому виду, удаляя лишние пробелы
-        message_text = message.text.strip().lower()
+        topic_id = message.message_thread_id
+
+        # Проверка на наличие текста в сообщении
+        if message.text:
+            message_text = message.text.lower()
+        else:
+            logging.warning("Received a message without text.")
+            return
+
 
         # Открыть заявку
-        if "ticket open" in message_text:
-            logging.info(f"{datetime.now().strftime('%H:%M %d.%m.%Y')}: Method \"ticket open\" triggered")
+        if "+ " in message_text:
+            logging.info(f" === APP_LOG: {datetime.now().strftime('%H:%M %d.%m.%Y')}: topic_id={message.message_thread_id} Method=\"+ \"")
 
             # Извлекаем номер заявки
             try:
-                ticket_number = message_text.split("ticket open")[1].split()[0]
+                ticket_number = message_text.split("+ ")[1].split()[0]
             except IndexError as e:
                 logging.error(f"Failed to extract ticket number: {e}")
                 await message.reply("Не могу распознать номер заявки. Попробуйте ещё раз.")
@@ -118,69 +143,117 @@ async def handle_message(message: Message):
                 await message.reply(f"Ticket {ticket_number} already exists.")
                 return
 
+            # Отправляем сообщение в тему Статус
+            opens_message_id = await bot.send_message(
+                chat_id = chat_id,
+                text = f"{ticket_number}\n📥 открыт в {date_time_formatter(now)}",
+                message_thread_id = STATUS_TOPIC_ID
+            )
+
             active_tickets[ticket_number] = {
                 "chat_id": chat_id,
+                "message_thread_id": topic_id,
                 "message_id": message.message_id,
+                "opens_message_id": opens_message_id.message_id,
                 "start_time": now,
-                "remind_times": 0
+                "remind_times": 0,
+                "notification_messages": []
             }
             save_tickets()
             schedule_reminder(ticket_number)
-            await message.reply(f"Ticket {ticket_number} was open ({now})")
+
+            try:
+                # Удаляем сообщение с +
+                await bot.delete_message(chat_id = chat_id, message_id=message.message_id)
+                logging.info(f" === APP_LOG: Message for ticket {ticket_number} deleted.")
+            except Exception as e:
+                logging.error(f"Failed to delete message for ticket {ticket_number}: {e}")
 
         # Закрыть заявку
-        if "ticket close" in message_text:
-            logging.info(f"{datetime.now().strftime('%H:%M %d.%m.%Y')}: Method \"ticket close\" triggered")
+        if "- " in message_text:
+            logging.info(f" === APP_LOG: {datetime.now().strftime('%H:%M %d.%m.%Y')}: topic_id={message.message_thread_id} Method=\"- \"")
 
             # Извлекаем номер заявки
             try:
-                ticket_number = message_text.split("ticket close")[1].split()[0]
+                ticket_number = message_text.split("- ")[1].split()[0]
             except IndexError:
                 await message.reply("I can't recognize the application number. Try again.")
                 return
 
             if ticket_number in active_tickets:
                 ticket = active_tickets[ticket_number]
+
+                # Отправляем сообщение о закрытии в тему Статус
+                await bot.edit_message_text(
+                    chat_id = chat_id,
+                    message_id = ticket['opens_message_id'],
+                    text = f"{ticket_number}\n📥 открыт в {date_time_formatter(ticket['start_time'])}\n✅ закрыт в {date_time_formatter(now)}",
+                )
+
                 try:
-                    # Удаляем сообщение с ticket open
+                    # Удаляем сообщение с + 
                     await bot.delete_message(chat_id=ticket["chat_id"], message_id=ticket["message_id"])
                     logging.info(f"Message for ticket {ticket_number} deleted.")
                 except Exception as e:
                     logging.error(f"Failed to delete message for ticket {ticket_number}: {e}")
 
+                # Удаляем все сообщения-оповещения
+                for msg_id in ticket.get("notification_messages", []):
+                    try:
+                        await bot.delete_message(chat_id=ticket["chat_id"], message_id=msg_id)
+                        logging.info(f"Deleted notification message {msg_id} for ticket {ticket_number}")
+                    except Exception as e:
+                        logging.error(f"Failed to delete notification message {msg_id} for ticket {ticket_number}: {e}")
+
                 remove_reminder(ticket_number)  # Удаляем задачу из планировщика
                 del active_tickets[ticket_number]  # Удаляем из списка активных заявок
                 save_tickets()  # Сохраняем изменения
-                await message.reply(f"Ticket {ticket_number} was closed.")
+
+                try:
+                    # Удаляем сообщение с - 
+                    await bot.delete_message(chat_id=ticket["chat_id"], message_id=message.message_id)
+                    logging.info(f" === APP_LOG: Message for ticket {ticket_number} deleted.")
+                except Exception as e:
+                    logging.error(f" === APP_LOG: Failed to delete message for ticket {ticket_number}: {e}")
+
             else:
-                await message.reply(f"Ticket {ticket_number} not found.")
+                await message.reply(f"{ticket_number} Не найден.")
 
 
         # Показать открытые заявки
-        if "opens" in message.text.lower():
-            logging.info(f"{datetime.now().strftime('%H:%M %d.%m.%Y')}: Method \"opens\" triggered")
+        if "list" in message.text.lower():
+            logging.info(f" === APP_LOG: {datetime.now().strftime('%H:%M %d.%m.%Y')}: topic_id={message.message_thread_id} Method=\"list\"")
             formatted_tickets = json.dumps(active_tickets, indent=4, ensure_ascii=False)
-            await bot.send_message(chat_id=chat_id, text=f"<pre>{formatted_tickets}</pre>", parse_mode="HTML")
+            await bot.send_message(
+                chat_id = message.chat.id,
+                text = f"<pre>{formatted_tickets}</pre>",
+                parse_mode = "HTML",
+                message_thread_id = message.message_thread_id
+            )
 
 
         # Помощь по командам
         if "bot help" in message.text.lower():
-            logging.info(f"{datetime.now().strftime('%H:%M %d.%m.%Y')}: Method \"bot help\" triggered")
+            logging.info(f" === APP_LOG: {datetime.now().strftime('%H:%M %d.%m.%Y')}: Method \"bot help\" triggered")
             
             help_text = (
                 "📋 **Доступные команды**:\n"
                 "1. **Открыть заявку:**\n"
-                "Напишите `ticket open `<номер заявки> чтобы создать новое оповещение.\n"
-                "   _Пример: ticket open 1234_\n\n"
+                "Напишите `+ `<номер заявки> чтобы создать новое оповещение.\n"
+                "   _Пример: + 1234_\n\n"
                 "2. **Закрыть заявку:**\n"
-                "Напишите `ticket close `<номер заявки> чтобы удалить оповещение.\n"
-                "   _Пример: ticket close 1234_\n\n"
+                "Напишите `- `<номер заявки> чтобы удалить оповещение.\n"
+                "   _Пример: - 1234_\n\n"
                 "3. **Показать открытые заявки:**\n"
-                "   Напишите `opens` для просмотра списка открытых оповещений.\n"
+                "   Напишите `list` для просмотра списка открытых оповещений.\n"
             )
 
             await message.reply(help_text, parse_mode="Markdown")
 
+
+        # Вернуть ID топика
+        if "tid" in message_text:
+            logging.info(f" === APP_LOG: thread_id = {message.message_thread_id}")
 
 # --- Инициализация ---------------------------------------------------------
 

@@ -17,10 +17,22 @@
 
 `deactivate` — Deactivate
 
-`python3 bot.py` — Start bot
+`python3 bot.py` — Start bot
 
 # Service Comands
 `pip install --upgrade pip` — Update pip
 
 `pip install aiogram aioschedule` — Install dependencies
 
+# DB active_tickets.json
+```json
+{
+    "<ticket_number>": {
+        "start_time": "дата и время",
+        "chat_id": "ID темы",
+        "remind_times": 0,
+        "message_id": "ID сообщения, создавшего заявку",
+        "notification_messages": []  # Список ID сообщений-оповещений
+    }
+}
+```
