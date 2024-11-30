@@ -11,8 +11,17 @@
 
 `cp config/config.py.dist config/config.py` — Make Config
 
+`docker pull python:3.10-slim`
+
+`docker compose up --build`
+
 
 # Work
+
+`docker compose up -d`
+
+## In container
+
 `source venv/bin/activate` - Activate Virtual Envairament
 
 `deactivate` — Deactivate
@@ -36,3 +45,9 @@
     }
 }
 ```
+
+# Backlog
+
+- start_time взять из message.date
+- разделить логику
+- add .env
