@@ -2,13 +2,10 @@ services:
   bot:
     build:
       context: .
-      dockerfile: ./docker/Dockerfile
+      dockerfile: Dockerfile
     container_name: tg-bot
+    env_file:
+      - .env
     volumes:
       - .:/app
-    environment:
-      - TOKEN=ваш_токен_бота
-      - REMINDER_INTERVAL=60
-      - REMINDER_TOPIC_ID=12345
-      - STATUS_TOPIC_ID=67890
-    command: ["python", "bot.py"]
+    command: ["python", "./app/main.py"]

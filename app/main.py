@@ -2,14 +2,23 @@ import logging
 import json
 import atexit
 import asyncio
+import os
 import aioschedule as schedule
-from config.config import TOKEN, REMINDER_INTERVAL, REMINDER_TOPIC_ID, STATUS_TOPIC_ID
+from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, Router
 from aiogram.types import Message
 
 
 logging.basicConfig(level=logging.INFO)
+
+# Загрузка переменных из .env
+load_dotenv()
+# Чтение переменных
+TOKEN = os.getenv("TOKEN")
+REMINDER_INTERVAL = int(os.getenv("REMINDER_INTERVAL", 60))
+REMINDER_TOPIC_ID = int(os.getenv("REMINDER_TOPIC_ID", 580))
+STATUS_TOPIC_ID = int(os.getenv("STATUS_TOPIC_ID", 280))
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -23,7 +32,7 @@ scheduled_jobs = {}
 def load_tickets():
     global active_tickets
     try:
-        with open("tickets.json", "r") as file:
+        with open("../tickets.json", "r") as file:
             active_tickets = json.load(file)
         logging.info("Tickets loaded successfully.")
     except FileNotFoundError:
@@ -33,7 +42,7 @@ def load_tickets():
 # Сохранение заявок в файл
 def save_tickets():
     try:
-        with open("tickets.json", "w") as file:
+        with open("../tickets.json", "w") as file:
             json.dump(active_tickets, file, indent=4, ensure_ascii=False)
         logging.info("Tickets saved successfully.")
     except Exception as e:

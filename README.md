@@ -1,37 +1,35 @@
 # Installation
-`sudo apt update`
 
-`sudo apt install python3` — Install python3
+`cp .env.dist .env` — Make and fill config
 
-`sudo apt install python3-venv` — Install the virtual environment manager
+`cp tickets.json.dist tickets.json` — Make Ticket Storage
 
-`python3 -m venv venv` — Create a virtual environment
-
-`cp tickets.json.dist tickets.json` — Make Storage
-
-`cp config/config.py.dist config/config.py` — Make Config
-
-`docker pull python:3.10-slim`
-
-`docker compose up --build`
+`docker compose buil` — Build Docker
 
 
 # Work
 
-`docker compose up -d`
+`docker compose up -d` — Start
 
-## In container
+`docker exec -it tg-bot bash` — Go into container
 
-`source venv/bin/activate` - Activate Virtual Envairament
+## Without Docker
 
-`deactivate` — Deactivate
+`source venv/bin/activate` - Activate Virtual Environment
+
+`deactivate` — Deactivate Virtual Environment
 
 `python3 bot.py` — Start bot
 
 # Service Comands
-`pip install --upgrade pip` — Update pip
 
-`pip install aiogram aioschedule` — Install dependencies
+`pip install --upgrade pip` — Update pip package manager
+
+`pip install aiogram aioschedule python-dotenv` — Install dependencies
+
+`pip list` — show uses dependencies
+
+`pip freeze > requirements.txt` — save list of dependencies
 
 # DB active_tickets.json
 ```json
@@ -50,4 +48,3 @@
 
 - start_time взять из message.date
 - разделить логику
-- add .env
