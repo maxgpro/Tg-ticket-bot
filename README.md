@@ -4,22 +4,24 @@
 
 `cp tickets.json.dist tickets.json` — Make Ticket Storage
 
-`docker compose buil` — Build Docker
+`docker compose build` — Build Docker
 
 
 # Work
 
-`docker compose up -d` — Start
+`docker compose up` — Start
 
 `docker exec -it tg-bot bash` — Go into container
 
 ## Without Docker
 
+`python3 -m venv venv` — Create a virtual environment
+
 `source venv/bin/activate` - Activate Virtual Environment
 
 `deactivate` — Deactivate Virtual Environment
 
-`python3 bot.py` — Start bot
+`python3 app/main.py` — Start bot
 
 # Service Comands
 
@@ -37,9 +39,11 @@
     "<ticket_number>": {
         "start_time": "дата и время",
         "chat_id": "ID темы",
-        "remind_times": 0,
+        "message_thread_id": "",
         "message_id": "ID сообщения, создавшего заявку",
-        "notification_messages": []  # Список ID сообщений-оповещений
+        "opens_message_id": "",
+        "remind_times": 0,
+        "notification_messages": []
     }
 }
 ```

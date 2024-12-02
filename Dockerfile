@@ -1,5 +1,5 @@
 # Указываем базовый образ
-FROM python:3.13-slim
+FROM python:3.10-slim
 
 WORKDIR /app
 

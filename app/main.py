@@ -1,24 +1,24 @@
-import logging
+import os
 import json
 import atexit
 import asyncio
-import os
+import logging
 import aioschedule as schedule
-from dotenv import load_dotenv
-from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, Router
 from aiogram.types import Message
+from datetime import datetime
+from dotenv import load_dotenv
 
 
 logging.basicConfig(level=logging.INFO)
 
-# Загрузка переменных из .env
-load_dotenv()
+load_dotenv() # Загрузка переменных из .env
 # Чтение переменных
 TOKEN = os.getenv("TOKEN")
-REMINDER_INTERVAL = int(os.getenv("REMINDER_INTERVAL", 60))
-REMINDER_TOPIC_ID = int(os.getenv("REMINDER_TOPIC_ID", 580))
-STATUS_TOPIC_ID = int(os.getenv("STATUS_TOPIC_ID", 280))
+REMINDER_INTERVAL = int(os.getenv("REMINDER_INTERVAL"))
+REMINDER_TOPIC_ID = int(os.getenv("REMINDER_TOPIC_ID"))
+STATUS_TOPIC_ID = int(os.getenv("STATUS_TOPIC_ID"))
+BD_HOST = str(os.getenv("BD_HOST"))
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -32,50 +32,53 @@ scheduled_jobs = {}
 def load_tickets():
     global active_tickets
     try:
-        with open("../tickets.json", "r") as file:
+        with open(BD_HOST, "r") as file:
             active_tickets = json.load(file)
-        logging.info("Tickets loaded successfully.")
+        logging.info(f" === APP_LOG: Loaded Tickets — successful: {active_tickets}")
+
     except FileNotFoundError:
         active_tickets = {}
-        logging.info("No tickets file found. Starting fresh.")
+        logging.info(" === APP_LOG: No tickets file found. Starting fresh.")
 
 # Сохранение заявок в файл
 def save_tickets():
     try:
-        with open("../tickets.json", "w") as file:
+        # Открываем файл в текстовом режиме записи
+        with open(BD_HOST, "w", encoding="utf-8") as file:
+            # Сериализуем данные в JSON и записываем
             json.dump(active_tickets, file, indent=4, ensure_ascii=False)
-        logging.info("Tickets saved successfully.")
+        logging.info(" === APP_LOG: Tickets saved successfully.")
     except Exception as e:
-        logging.error(f"Error saving tickets: {e}")
+        logging.error(f" === APP_LOG: Error saving tickets: {e}")
 
 # Загрузка задач для активных заявок
 def load_scheduler_jobs():
     for ticket_number in active_tickets:
+        logging.info(f" === APP_LOG: Scheduler Job for ticket {ticket_number} restored.")
         schedule_reminder(ticket_number)
-        logging.info(f"Task for ticket {ticket_number} restored.")
+        logging.info(f" === APP_LOG: Loaded Scheduler Jobs — successful")
 
 # Создание напоминания в планировщике
 def schedule_reminder(ticket_number):
     # Создаем задачу и сохраняем ее в словаре
-    job = schedule.every(REMINDER_INTERVAL).seconds.do(
+    scheduled_jobs[ticket_number] = schedule.every(REMINDER_INTERVAL).seconds.do(
         lambda: asyncio.create_task(send_reminder(ticket_number))
     )
-    scheduled_jobs[ticket_number] = job
-    logging.info(f"Reminder scheduled for ticket {ticket_number}.")
+    logging.info(f" === APP_LOG: Scheduler Job for ticket \"{ticket_number}\" created.")
 
 # Удаление напоминания из планировщика
 def remove_reminder(ticket_number):
     job = scheduled_jobs.pop(ticket_number, None)
     if job:
         schedule.cancel_job(job)
-        logging.info(f"Reminder for ticket {ticket_number} removed.")
+        logging.info(f" === APP_LOG: Scheduler Job for ticket \"{ticket_number}\" removed.")
     else:
-        logging.warning(f"No reminder found for ticket {ticket_number}.")
+        logging.warning(f" === APP_LOG: Scheduler Job for ticket \"{ticket_number}\" not found.")
 
 # Отправка напоминания
 async def send_reminder(ticket_number: str):
     try:
-        logging.info(f"send_reminder called for ticket {ticket_number}")
+        logging.info(f" === APP_LOG: send_reminder called for ticket {ticket_number}")
         ticket = active_tickets.get(ticket_number)
         if ticket:
             ticket["remind_times"] += 1
@@ -97,10 +100,9 @@ async def send_reminder(ticket_number: str):
             active_tickets[ticket_number] = ticket
             save_tickets()
 
-            logging.info(f"Reminder sent for ticket {ticket_number}")
+            logging.info(f" === APP_LOG: Reminder sent for ticket {ticket_number}")
     except Exception as e:
-        logging.error(f"Error in send_reminder for ticket {ticket_number}: {e}")
-
+        logging.error(f" === APP_LOG: Error in send_reminder for ticket {ticket_number}: {e}")
 
 def date_time_formatter(start_time: str) -> str:
     try:
@@ -110,17 +112,16 @@ def date_time_formatter(start_time: str) -> str:
         formatted_start_time = start_time_obj.strftime('%H:%M — %d.%m.%Y')
         return formatted_start_time
     except Exception as e:
-        logging.error(f"Error in date_time_formater: {e}")
+        logging.error(f" === APP_LOG: Error in date_time_formater: {e}")
         return start_time  # Возврат исходной строки, если произошла ошибка
 
 
 # --- Команды бота ---------------------------------------------------------
-
 @router.message()
 async def handle_message(message: Message):
     # Проверяем, что сообщение пришло из группы или супергруппы
     if message.chat.type in ["group", "supergroup"]:
-        logging.info(f"Message received from the group: {message.chat.title} | {message.text}")
+        logging.info(f" === APP_LOG: Message received from the group: {message.chat.title} | {message.text}")
 
         now = datetime.now().strftime('%H:%M %d.%m.%Y')
         chat_id = message.chat.id
@@ -133,11 +134,8 @@ async def handle_message(message: Message):
             logging.warning("Received a message without text.")
             return
 
-
         # Открыть заявку
         if "+ " in message_text:
-            logging.info(f" === APP_LOG: {datetime.now().strftime('%H:%M %d.%m.%Y')}: topic_id={message.message_thread_id} Method=\"+ \"")
-
             # Извлекаем номер заявки
             try:
                 ticket_number = message_text.split("+ ")[1].split()[0]
@@ -160,11 +158,11 @@ async def handle_message(message: Message):
             )
 
             active_tickets[ticket_number] = {
+                "start_time": now,
                 "chat_id": chat_id,
                 "message_thread_id": topic_id,
                 "message_id": message.message_id,
                 "opens_message_id": opens_message_id.message_id,
-                "start_time": now,
                 "remind_times": 0,
                 "notification_messages": []
             }
@@ -202,17 +200,17 @@ async def handle_message(message: Message):
                 try:
                     # Удаляем сообщение с + 
                     await bot.delete_message(chat_id=ticket["chat_id"], message_id=ticket["message_id"])
-                    logging.info(f"Message for ticket {ticket_number} deleted.")
+                    logging.info(f" === APP_LOG: Message for ticket {ticket_number} deleted.")
                 except Exception as e:
-                    logging.error(f"Failed to delete message for ticket {ticket_number}: {e}")
+                    logging.error(f" === APP_LOG: Failed to delete message for ticket {ticket_number}: {e}")
 
                 # Удаляем все сообщения-оповещения
                 for msg_id in ticket.get("notification_messages", []):
                     try:
                         await bot.delete_message(chat_id=ticket["chat_id"], message_id=msg_id)
-                        logging.info(f"Deleted notification message {msg_id} for ticket {ticket_number}")
+                        logging.info(f" === APP_LOG: Deleted notification message {msg_id} for ticket {ticket_number}")
                     except Exception as e:
-                        logging.error(f"Failed to delete notification message {msg_id} for ticket {ticket_number}: {e}")
+                        logging.error(f" === APP_LOG: Failed to delete notification message {msg_id} for ticket {ticket_number}: {e}")
 
                 remove_reminder(ticket_number)  # Удаляем задачу из планировщика
                 del active_tickets[ticket_number]  # Удаляем из списка активных заявок
@@ -228,10 +226,8 @@ async def handle_message(message: Message):
             else:
                 await message.reply(f"{ticket_number} Не найден.")
 
-
         # Показать открытые заявки
         if "list" in message.text.lower():
-            logging.info(f" === APP_LOG: {datetime.now().strftime('%H:%M %d.%m.%Y')}: topic_id={message.message_thread_id} Method=\"list\"")
             formatted_tickets = json.dumps(active_tickets, indent=4, ensure_ascii=False)
             await bot.send_message(
                 chat_id = message.chat.id,
@@ -240,6 +236,26 @@ async def handle_message(message: Message):
                 message_thread_id = message.message_thread_id
             )
 
+        # Показать содержимое файла tickets.json
+        if "dump" in message.text.lower():
+            try:
+                with open(BD_HOST, "r", encoding="utf-8") as file:
+                    file_content = json.load(file)
+
+                formatted_content = json.dumps(file_content, indent=4, ensure_ascii=False)
+
+                await bot.send_message(
+                    chat_id=message.chat.id,
+                    text=f"<pre>{formatted_content}</pre>",
+                    parse_mode="HTML",
+                    message_thread_id=message.message_thread_id
+                )
+            except FileNotFoundError:
+                logging.error(" === APP_LOG: tickets.json file not found.")
+            except json.JSONDecodeError as e:
+                logging.error(f" === APP_LOG: Error decoding tickets.json: {e}")
+            except Exception as e:
+                logging.error(f" === APP_LOG: Unexpected error while reading tickets.json: {e}")
 
         # Помощь по командам
         if "bot help" in message.text.lower():
@@ -259,14 +275,13 @@ async def handle_message(message: Message):
 
             await message.reply(help_text, parse_mode="Markdown")
 
-
         # Вернуть ID топика
         if "tid" in message_text:
             logging.info(f" === APP_LOG: thread_id = {message.message_thread_id}")
 
 # --- Инициализация ---------------------------------------------------------
 
-dp.include_router(router) # Регистрация маршрутизатора
+logging.info(f" === APP_LOG: Inited Router  — {dp.include_router(router)}") # Регистрация маршрутизатора
 load_tickets() # Загрузка заявок из БД
 load_scheduler_jobs() # Загрузка задач планировщика из БД
 
